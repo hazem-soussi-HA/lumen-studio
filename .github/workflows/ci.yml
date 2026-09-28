@@ -23,9 +23,9 @@ jobs:
       matrix:
         node: ['20', '22']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
           cache: npm
@@ -37,14 +37,14 @@ jobs:
         run: npm run lint
 
       - name: Fetch a Chrome binary for the smoke test
-        run: npx --yes @puppeteer/browsers install chrome@stable --path ./chrome
+        run: npx --yes @puppeteer/browsers install chrome@stable --path "$PWD/chrome"
 
       - name: Smoke test (30 checks, software rasteriser)
         run: npm test
 
       - name: Upload failure screenshots
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots-node${{ matrix.node }}
           path: test/output/
@@ -55,7 +55,7 @@ jobs:
     name: secret scan
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -83,7 +83,7 @@ jobs:
       group: pages
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Assemble the static bundle
         run: |
@@ -97,12 +97,12 @@ jobs:
           echo "--- bundle ---"
           find _site -maxdepth 2 -not -path '*/src/*' | sort
 
-      - uses: actions/configure-pages@v5
+      - uses: actions/configure-pages@v6
 
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: _site
 
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
 
