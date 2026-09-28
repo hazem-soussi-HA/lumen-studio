@@ -94,6 +94,11 @@ jobs:
           # The editor is a static app: every asset is generated at runtime, so the
           # bundle is just the shell, the module graph and the documentation.
           touch _site/.nojekyll
+          # There is no REST API behind a static host. Ship an honest stub so the
+          # client's health probe gets a real answer instead of a 404, and the
+          # status bar correctly reads "server: offline".
+          mkdir -p _site/api
+          printf '{"ok":false,"service":"lumen-studio","mode":"static"}\n' > _site/api/health
           echo "--- bundle ---"
           find _site -maxdepth 2 -not -path '*/src/*' | sort
 

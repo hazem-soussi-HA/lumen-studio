@@ -77,9 +77,12 @@ export class Storage extends Emitter {
     try {
       const ctl = new AbortController();
       const t = setTimeout(() => ctl.abort(), 1500);
-      const r = await fetch('./api/health', { signal: ctl.signal });
+      const r = await fetch('./api/health', { signal: ctl.signal, cache: 'no-store' });
       clearTimeout(t);
-      this.serverOnline = r.ok;
+      // A 200 is not enough: a static deployment ships an honest stub that answers
+      // {"ok":false}, so the editor can tell "no API here" from "API is up" without
+      // the probe ever having to 404.
+      this.serverOnline = r.ok && (await r.json().catch(() => null))?.ok === true;
     } catch { this.serverOnline = false; }
     this.emit('server', this.serverOnline);
     return this.serverOnline;
