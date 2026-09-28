@@ -121,7 +121,9 @@ export class App {
     this.history.reset();
     this.refreshAll();
     this.serverOnline = await storage.ping();
-    storage.connectEvents();
+    // Only subscribe when the API answered — on a static host the EventSource would
+    // just reconnect-loop against a 404.
+    if (this.serverOnline) storage.connectEvents();
     this.updateStatus();
     this.running = true;
     this._lastTime = performance.now();

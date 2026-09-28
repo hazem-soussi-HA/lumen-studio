@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: lint + smoke test (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint (syntax, import graph, GLSL authoring rules, house style)
+        run: npm run lint
+
+      - name: Fetch a Chrome binary for the smoke test
+        run: npx --yes @puppeteer/browsers install chrome@stable --path ./chrome
+
+      - name: Smoke test (30 checks, software rasteriser)
+        run: npm test
+
+      - name: Upload failure screenshots
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-node${{ matrix.node }}
+          path: test/output/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  security:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Scan the working tree and full history for credentials
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The tree is small and the audience is public — there is no reason to
+          # exclude anything from the scan.
+          GITLEAKS_ENABLE_UPLOAD_ARTIFACT: false
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: [verify, security]
+    # PRs get the checks; only main gets published.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assemble the static bundle
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp index.html LICENSE README.md _site/
+          cp -r src docs _site/
+          # The editor is a static app: every asset is generated at runtime, so the
+          # bundle is just the shell, the module graph and the documentation.
+          touch _site/.nojekyll
+          echo "--- bundle ---"
+          find _site -maxdepth 2 -not -path '*/src/*' | sort
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
