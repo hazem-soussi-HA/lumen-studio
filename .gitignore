@@ -1,0 +1,41 @@
+# dependencies
+node_modules/
+
+# puppeteer browser download (see README)
+chrome/
+
+# test artefacts
+test/output/
+
+# local project data written by server/server.js
+.lumen/
+
+# environment / credentials — never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.keystore
+id_rsa*
+id_ed25519*
+.npmrc
+.netrc
+credentials.json
+secrets.json
+service-account*.json
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.log
+npm-debug.log*

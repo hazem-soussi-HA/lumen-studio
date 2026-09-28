@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="color-scheme" content="dark" />
+<title>Lumen Studio — WebGL Engine &amp; Editor</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 29 9v14L16 30 3 23V9z' fill='%2300e5ff'/%3E%3Cpath d='M16 2v28M3 9l13 7 13-7M3 23l13-7 13 7' stroke='%23003b4d' stroke-width='1.4' fill='none'/%3E%3C/svg%3E" />
+<link rel="stylesheet" href="./src/editor/editor.css" />
+</head>
+<body>
+
+<!-- ===================================================== boot / fatal ===== -->
+<div id="boot" class="boot">
+  <div class="boot-card">
+    <div class="boot-logo" aria-hidden="true">
+      <svg viewBox="0 0 64 64"><path d="M32 4 58 18v28L32 60 6 46V18z"/><path class="wire" d="M32 4v56M6 18l26 14 26-14M6 46l26-14 26 14"/></svg>
+    </div>
+    <h1>Lumen&nbsp;Studio</h1>
+    <p class="boot-sub">WebGL&nbsp;2.0 engine &amp; scene editor · OpenGL&nbsp;ES&nbsp;2.0 / 3.0</p>
+    <div class="boot-bar"><i id="bootBar"></i></div>
+    <pre id="bootMsg" class="boot-msg">requesting graphics adapter…</pre>
+  </div>
+</div>
+
+<div id="fatal" class="fatal" hidden>
+  <div class="fatal-card">
+    <h2 id="fatalTitle">WebGL unavailable</h2>
+    <p id="fatalMsg"></p>
+    <ul class="fatal-tips">
+      <li>Enable hardware acceleration in your browser settings.</li>
+      <li>Update your GPU driver — old drivers are frequently block-listed.</li>
+      <li>Check <code>chrome://gpu</code> for the exact reason.</li>
+    </ul>
+    <pre id="fatalDetail" class="fatal-detail"></pre>
+  </div>
+</div>
+
+<!-- ============================================================== app ===== -->
+<div id="app" class="app" hidden>
+
+  <!-- ------------------------------------------------------- top bar --- -->
+  <header class="topbar">
+    <div class="tb-group tb-brand">
+      <span class="tb-logo" aria-hidden="true"></span>
+      <span class="tb-title">LUMEN</span>
+    </div>
+
+    <div class="tb-group tb-file">
+      <button class="tb-btn" data-cmd="file.new" title="New scene">New</button>
+      <button class="tb-btn" data-cmd="file.open" title="Open project">Open</button>
+      <button class="tb-btn" data-cmd="file.save" title="Save project (Ctrl+S)">Save</button>
+      <button class="tb-btn" data-cmd="file.export" title="Export">Export ▾</button>
+    </div>
+
+    <div class="tb-group tb-scene">
+      <span class="tb-label">Scene</span>
+      <input id="sceneName" class="tb-input" value="Untitled" spellcheck="false" title="Scene name" />
+    </div>
+
+    <div class="tb-group tb-search">
+      <label class="search">
+        <svg viewBox="0 0 16 16" class="ico"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5 14 14"/></svg>
+        <input id="paletteSearch" placeholder="Search commands, entities, assets…" spellcheck="false" autocomplete="off" />
+        <kbd>⌘K</kbd>
+      </label>
+    </div>
+
+    <div class="tb-group tb-right">
+      <div class="seg" id="camSelector" title="Active camera">
+        <button class="seg-btn" data-cmd="view.cameraList">Camera</button>
+      </div>
+      <div class="seg" id="viewMode" title="Projection">
+        <button class="seg-btn is-active" data-cmd="view.perspective">Persp</button>
+        <button class="seg-btn" data-cmd="view.ortho">Ortho</button>
+      </div>
+      <button class="tb-btn icon" data-cmd="view.play" title="Present (hide UI) — F11">
+        <svg viewBox="0 0 16 16" class="ico"><path d="M4 3l9 5-9 5z"/></svg>
+      </button>
+      <button class="tb-btn icon" data-cmd="view.screenshot" title="Capture PNG">
+        <svg viewBox="0 0 16 16" class="ico"><rect x="1.5" y="4" width="13" height="9.5" rx="2"/><circle cx="8" cy="8.7" r="2.6"/><path d="M5.5 4l1-1.5h3l1 1.5"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- --------------------------------------------------------- rail ---- -->
+  <nav class="rail" id="rail">
+    <button class="rail-btn is-active" data-tool="select" title="Select (Q)">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M4 2.5l11 7.2-4.7 1.2 2.6 4.9-2 1-2.6-4.9L4 15.5z"/></svg>
+    </button>
+    <button class="rail-btn" data-tool="move" title="Move (W)">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M10 1.5v17M1.5 10h17M10 1.5 7.6 4M10 1.5 12.4 4M10 18.5 7.6 16M10 18.5l2.4-2.5M1.5 10 4 7.6M1.5 10 4 12.4M18.5 10 16 7.6M18.5 10 16 12.4"/></svg>
+    </button>
+    <button class="rail-btn" data-tool="rotate" title="Rotate (E)">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M16 10a6 6 0 1 1-2.2-4.6"/><path d="M16.5 2.5V6H13"/></svg>
+    </button>
+    <button class="rail-btn" data-tool="scale" title="Scale (R)">
+      <svg viewBox="0 0 20 20" class="ico"><rect x="2.5" y="9" width="6" height="6"/><rect x="11.5" y="2.5" width="6" height="6"/></svg>
+    </button>
+    <hr />
+    <button class="rail-btn" data-cmd="gizmo.toggle" title="Toggle gizmo">
+      <svg viewBox="0 0 20 20" class="ico"><circle cx="10" cy="10" r="3.2"/><path d="M10 1v5.8M10 13.2V19M1 10h5.8M13.2 10H19"/></svg>
+    </button>
+    <button class="rail-btn" data-cmd="gizmo.space" title="Gizmo space (X)">
+      <svg viewBox="0 0 20 20" class="ico"><circle cx="10" cy="10" r="7.5"/><path d="M10 2.5v15M2.5 10h15" opacity=".45"/></svg>
+    </button>
+    <button class="rail-btn" data-cmd="edit.snap" title="Snapping">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M3 7h4M3 13h4M13 7h4M13 13h4M7 3v4M13 13v4"/></svg>
+    </button>
+    <hr />
+    <button class="rail-btn" data-cmd="render.debug" title="Debug view (cycle)">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M10 2.5 17 6.5v7L10 17.5 3 13.5v-7z"/><path d="M10 2.5v15M3 6.5l7 4 7-4" opacity=".5"/></svg>
+    </button>
+    <button class="rail-btn" data-cmd="view.grid" title="Toggle grid (G)">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M2.5 7.5h15M2.5 12.5h15M7.5 2.5v15M12.5 2.5v15"/></svg>
+    </button>
+    <button class="rail-btn" data-cmd="stats.toggle" title="Statistics">
+      <svg viewBox="0 0 20 20" class="ico"><path d="M3 16V9M8 16V4M13 16v-6M18 16v-9"/></svg>
+    </button>
+    <hr />
+    <button class="rail-btn" data-cmd="editor.capabilities" title="Adapter &amp; capabilities report">
+      <svg viewBox="0 0 20 20" class="ico"><circle cx="10" cy="10" r="7.5"/><path d="M10 6v4.5M10 13.2v.6"/></svg>
+    </button>
+    <button class="rail-btn" data-cmd="help.shortcuts" title="Keyboard shortcuts (?)">
+      <svg viewBox="0 0 20 20" class="ico"><rect x="2.5" y="5" width="15" height="10" rx="2"/><path d="M6 8.5h.01M9 8.5h.01M12 8.5h.01M6 12h8"/></svg>
+    </button>
+  </nav>
+
+  <!-- ----------------------------------------------------- hierarchy ---- -->
+  <section class="panel panel-left" id="panelHierarchy">
+    <div class="panel-head">
+      <span class="panel-title">Hierarchy</span>
+      <div class="panel-actions">
+        <button class="mini" data-cmd="hierarchy.add" title="Add entity">＋</button>
+        <button class="mini" data-cmd="hierarchy.duplicate" title="Duplicate (Ctrl+D)">⧉</button>
+        <button class="mini" data-cmd="hierarchy.delete" title="Delete (Del)">🗑</button>
+      </div>
+    </div>
+    <div class="panel-filter">
+      <input class="filter" data-filter="hierarchy" placeholder="Filter entities" spellcheck="false" />
+    </div>
+    <div class="panel-body" id="hierarchyTree" tabindex="0"></div>
+  </section>
+
+  <!-- ------------------------------------------------------- viewport --- -->
+  <main class="viewport" id="viewport">
+    <canvas id="glcanvas" tabindex="0"></canvas>
+    <div class="vp-overlay" id="vpOverlay">
+      <div class="vp-axis" id="vpAxis" title="World axes"><canvas id="axisCanvas" width="132" height="132"></canvas></div>
+      <div class="vp-navlabel" id="navLabel">Perspective</div>
+      <div class="vp-hint" id="vpHint"></div>
+      <div class="vp-debug" id="debugLegend" hidden></div>
+    </div>
+    <div class="vp-stats" id="statsPanel" hidden></div>
+    <div class="vp-empty" id="vpEmpty" hidden>
+      <h3>No renderable entity in view</h3>
+      <p>Frame the scene with <kbd>F</kbd>, or add a primitive from the Hierarchy.</p>
+    </div>
+  </main>
+
+  <!-- ------------------------------------------------------ inspector --- -->
+  <section class="panel panel-right" id="panelInspector">
+    <div class="panel-head">
+      <span class="panel-title" id="inspectorTitle">Inspector</span>
+      <div class="panel-actions">
+        <button class="mini" data-cmd="inspector.preview" title="Material preview sphere">◐</button>
+        <button class="mini" data-cmd="inspector.reset" title="Revert">↺</button>
+      </div>
+    </div>
+    <div class="panel-body" id="inspectorBody"></div>
+  </section>
+
+  <!-- bottom dock: assets + console -->
+  <div class="bottom-dock" id="bottomDock">
+  <section class="panel panel-assets" id="panelAssets">
+    <div class="panel-head">
+      <span class="panel-title">Assets</span>
+      <div class="panel-actions">
+        <button class="mini" data-cmd="assets.import" title="Import model / texture">⤓</button>
+        <button class="mini" data-cmd="assets.newMaterial" title="New material">＋</button>
+        <button class="mini" data-cmd="assets.delete" title="Delete selected">🗑</button>
+        <span class="panel-count" id="assetCount">0</span>
+      </div>
+    </div>
+    <div class="assets-body">
+      <div class="assets-folders" id="assetFolders"></div>
+      <div class="assets-grid-wrap">
+        <div class="assets-filter">
+          <input class="filter" data-filter="assets" placeholder="Filter assets" spellcheck="false" />
+          <select class="mini-select" id="assetTypeFilter">
+            <option value="">All types</option>
+            <option value="material">Material</option>
+            <option value="texture">Texture</option>
+            <option value="model">Model</option>
+            <option value="volume">Volume</option>
+          </select>
+        </div>
+        <div class="assets-grid" id="assetGrid"></div>
+      </div>
+    </div>
+    <div class="splat" id="assetDrop" hidden><div>Drop .obj .stl .gltf .glb .png .jpg .hdr</div></div>
+  </section>
+
+  <!-- -------------------------------------------------------- console --- -->
+  <section class="panel panel-console" id="panelConsole">
+    <div class="panel-head">
+      <span class="panel-title">Console</span>
+      <div class="panel-actions">
+        <div class="seg tiny" id="consoleFilter">
+          <button class="seg-btn is-active" data-level="all">All</button>
+          <button class="seg-btn" data-level="warn">Warn</button>
+          <button class="seg-btn" data-level="error">Error</button>
+        </div>
+        <button class="mini" data-cmd="console.clear" title="Clear">⌫</button>
+      </div>
+    </div>
+    <div class="panel-body" id="consoleBody"></div>
+    <form class="console-input" id="consoleForm">
+      <span class="prompt">›</span>
+      <input id="consoleInput" spellcheck="false" autocomplete="off" placeholder="JavaScript — engine, scene and app are in scope" />
+    </form>
+  </section>
+  </div>
+  <div class="splitter v is-hidden" id="splitterDock" data-split="dock"></div>
+
+  <!-- --------------------------------------------------------- status --- -->
+  <footer class="statusbar">
+    <span class="st-item" id="stBackend">—</span>
+    <span class="st-sep"></span>
+    <span class="st-item" id="stFps">— fps</span>
+    <span class="st-sep"></span>
+    <span class="st-item" id="stDraw">— draws</span>
+    <span class="st-sep"></span>
+    <span class="st-item" id="stTris">— tris</span>
+    <span class="st-item grow" id="stMsg"></span>
+    <span class="st-item" id="stSel">no selection</span>
+    <span class="st-sep"></span>
+    <span class="st-item" id="stServer">offline</span>
+    <span class="st-item" id="stCtx">ctx ok</span>
+  </footer>
+
+  <!-- ------------------------------------------------- splitters / dock -- -->
+  <div class="splitter v" data-split="left"></div>
+  <div class="splitter v" data-split="right"></div>
+  <div class="splitter h" data-split="bottom"></div>
+
+  <!-- ------------------------------------------------------ overlays --- -->
+  <div class="modal-scrim" id="modalScrim" hidden><div class="modal" id="modal"></div></div>
+  <div class="palette-scrim" id="paletteScrim" hidden>
+    <div class="palette" role="dialog" aria-modal="true">
+      <div class="palette-head">
+        <input id="paletteInput" spellcheck="false" autocomplete="off" placeholder="Type a command…" />
+      </div>
+      <div class="palette-list" id="paletteList"></div>
+      <div class="palette-foot">
+        <span><kbd>↑↓</kbd> navigate</span><span><kbd>⏎</kbd> run</span><span><kbd>esc</kbd> close</span>
+      </div>
+    </div>
+  </div>
+  <div class="ctxmenu" id="ctxMenu" hidden></div>
+  <div class="tooltip" id="tooltip" hidden></div>
+  <div class="drop-overlay" id="dropOverlay" hidden><div>Drop scene files to import</div></div>
+</div>
+
+<noscript>
+  <div class="fatal"><div class="fatal-card"><h2>JavaScript required</h2>
+  <p>Lumen Studio is a pure client-side application; the engine, the renderer and the editor all run in your browser.</p></div></div>
+</noscript>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>

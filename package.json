@@ -1,0 +1,29 @@
+{
+  "name": "lumen-studio",
+  "version": "1.0.0",
+  "description": "Lumen Studio — a browser-native 3D engine & editor built directly on WebGL / OpenGL ES, with a WebGL 1 fallback path.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node server/server.js --port 8080",
+    "test": "node test/smoke.mjs",
+    "lint": "node tools/lint.mjs"
+  },
+  "keywords": [
+    "webgl",
+    "webgl2",
+    "glsl",
+    "opengl-es",
+    "3d",
+    "editor",
+    "pbr",
+    "engine"
+  ],
+  "devDependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}
