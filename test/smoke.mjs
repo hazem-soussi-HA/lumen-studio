@@ -291,6 +291,28 @@ f 1/1/1 3/3/1 4/4/1`;
   // 4 positions, but the two faces reference different uv sets → 8 unique corners.
   check('OBJ parser', imported.verts >= 4 && imported.tris === 2, `${imported.verts} verts / ${imported.tris} tris`);
 
+  // 9b. id generation. Asset ids are truncated (`uid().slice(0, 10)`), so the
+  // leading characters have to be unique on their own — a timestamp-only prefix
+  // repeats every millisecond and colliding ids overwrite each other silently in
+  // the asset map. Hammer it in one tick, which is the worst case.
+  const uidCheck = await page.evaluate(async () => {
+    const { uid } = await import('/src/core/utils.js');
+    const N = 20000;
+    for (const width of [8, 10, 12]) {
+      const seen = new Set();
+      let dupes = 0;
+      for (let i = 0; i < N; i++) {
+        const id = uid().slice(0, width);
+        if (seen.has(id)) dupes++;
+        seen.add(id);
+      }
+      if (dupes) return { width, dupes, unique: seen.size, N };
+    }
+    return { width: 0, dupes: 0, unique: N, N };
+  });
+  check('ids are unique after truncation', uidCheck.dupes === 0,
+    uidCheck.dupes ? `${uidCheck.dupes} duplicate ids at slice(0, ${uidCheck.width})` : `${uidCheck.N} ids unique at 8/10/12 chars`);
+
   // 10. GLSL transpiler: the same source must yield both dialects
   const transpile = await page.evaluate(async () => {
     const { transpile } = await import('/src/gl/program.js');

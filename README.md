@@ -43,7 +43,7 @@ Written for people who read frame graphs for fun.
   report scores a tier that drives shadow resolution, MSAA, DPR, post passes and light
   limits. The CI suite runs entirely on a CPU rasteriser and still asserts a correct
   frame.
-* **Deterministic verification.** 30 end-to-end checks drive the real editor in
+* **Deterministic verification.** 31 end-to-end checks drive the real editor in
   headless Chrome: id-buffer picking on an instanced entity, gizmo hit testing,
   context loss and restore, undo/redo, and a hard failure on *any* console error.
 
@@ -66,7 +66,7 @@ authentication and answer CORS permissively, so `--host 0.0.0.0` is opt-in and p
 warning — do not use it on a network you do not control.
 
 ```bash
-npm test             # headless Chrome smoke test (29 checks)
+npm test             # headless Chrome smoke test (31 checks)
 npm run lint         # syntax, import graph, GLSL authoring rules, house style
 node tools/shot.mjs  # screenshot the 3D viewport to test/output/viewport.png
 ```

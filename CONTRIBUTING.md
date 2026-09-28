@@ -32,7 +32,7 @@ npm install                                   # puppeteer-core, for the tests on
 npx @puppeteer/browsers install chrome@stable # lands in ./chrome, picked up automatically
 npm start                                     # http://localhost:8080
 npm run lint
-npm test                                      # 30 checks in headless Chrome
+npm test                                      # 31 checks in headless Chrome
 ```
 
 The smoke test needs no GPU — it runs Chrome with SwiftShader.

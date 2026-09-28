@@ -136,7 +136,7 @@ That keeps an idle tab from pinning a GPU.
 ## Testing
 
 `test/smoke.mjs` drives the real editor in headless Chrome (SwiftShader if there is no
-GPU) and asserts on observable state — 29 checks covering the capability report, draw
+GPU) and asserts on observable state — 31 checks covering the capability report, draw
 counts, shader variants, a non-black frame, absence of GL errors, id-buffer picking
 against known entities, instanced drawing *and* picking, material property
 round-tripping, entity creation, property editing, undo/redo, gizmo geometry and hit

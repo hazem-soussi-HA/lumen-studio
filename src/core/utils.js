@@ -6,14 +6,38 @@
 let _idCounter = 0;
 const ALPHABET = '0123456789abcdefghijklmnopqrstuvwxyz';
 
-/** Monotonic, collision-resistant within a session. Mirrors PlayCanvas' `guid`-ish ids. */
+function randomChars(n) {
+  let s = '';
+  for (let i = 0; i < n; i++) s += ALPHABET[(Math.random() * 36) | 0];
+  return s;
+}
+
+// Fixed per process, so two tabs (or two processes) generating ids in the same
+// millisecond do not share a prefix.
+const _salt = randomChars(3);
+let _lastHead = '';
+
+/**
+ * Monotonic, collision-resistant within a session. Mirrors PlayCanvas' `guid`-ish ids.
+ *
+ * The *leading* characters are the ones that have to be unique on their own:
+ * callers truncate (`uid().slice(0, 8)` for import task ids, `slice(0, 10)` for
+ * asset ids, `slice(0, 12)` for materials), and a timestamp-based prefix repeats
+ * every millisecond — two assets created in the same millisecond would then share
+ * an id and silently overwrite one another in the asset map. So the prefix is a
+ * per-process salt plus a monotonic sequence, and the timestamp (useful for rough
+ * chronological ordering) and the random tail follow it.
+ */
 export function uid(prefix = '') {
-  _idCounter = (_idCounter + 1) % 0xfffffff;
-  const t = Date.now().toString(36);
-  const n = _idCounter.toString(36).padStart(5, '0');
-  let r = '';
-  for (let i = 0; i < 4; i++) r += ALPHABET[(Math.random() * 36) | 0];
-  return `${prefix}${t}${n}${r}`;
+  let head;
+  do {
+    _idCounter = (_idCounter + 1) % 0xfffffff;
+    head = _salt + _idCounter.toString(36).padStart(5, '0');
+    // Only reachable after 60M ids in one process, but a repeated prefix would be
+    // a silent data-loss bug, so never emit one.
+  } while (head === _lastHead);
+  _lastHead = head;
+  return `${prefix}${head}${Date.now().toString(36)}${randomChars(4)}`;
 }
 
 export class Emitter {
