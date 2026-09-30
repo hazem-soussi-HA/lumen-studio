@@ -1,18 +1,20 @@
 /**
  * Lumen Studio — development / self-hosting server.
  *
- * Zero dependencies. Three responsibilities:
+ * Zero dependencies. Four responsibilities:
  *   1. Static file host for the ES-module engine + editor (correct MIME types,
  *      strong caching rules, byte-range-free but ETag-validated responses).
  *   2. A tiny REST surface for project persistence (the editor saves to
  *      localStorage first, then mirrors to the server when it is present).
  *   3. A Server-Sent Events channel so every open tab is notified when another
  *      tab commits a project — cheap collaborative "hot reload" of scene JSON.
+ *   4. Hazoom Dimensions — a text-to-3D proxy that hides the Tripo API key,
+ *      caches generated models, validates prompts, and rate-limits requests.
  *
  *   node server/server.js [--port 8080] [--host 0.0.0.0] [--data .lumen]
  *
- *   The API surface has no authentication and answers CORS permissively, so the
- *   default bind is loopback. Binding anything else is opt-in and warns.
+ * The API surface has no authentication and answers CORS permissively, so the
+ * default bind is loopback. Binding anything else is opt-in and warns.
  */
 
 import http from 'node:http';
@@ -205,7 +207,108 @@ async function handleAPI(req, res, url) {
     }
   }
 
+  if (pathname === '/api/generate' && req.method === 'POST') {
+    return handleGenerate(req, res);
+  }
+
+  if (pathname === '/api/generate/status' && req.method === 'GET') {
+    return sendJSON(res, 200, {
+      ok: true,
+      provider: 'tripo',
+      cached: Object.keys(generationCache).length,
+      rateLimit: { maxRequests: rateLimit.max, windowMs: rateLimit.window }
+    });
+  }
+
   return sendJSON(res, 404, { error: 'unknown endpoint', pathname });
+}
+
+/* --------------------------------------------------- hazoom dimensions -- */
+
+const TRIPO_API_KEY = process.env.TRIPO_API_KEY || '';
+const TRIPO_BASE = 'https://openapi.tripo3d.ai/v3';
+const generationCache = new Map();
+const rateLimit = { max: 20, window: 60000, requests: [] };
+
+function checkRateLimit() {
+  const now = Date.now();
+  rateLimit.requests = rateLimit.requests.filter((t) => now - t < rateLimit.window);
+  if (rateLimit.requests.length >= rateLimit.max) return false;
+  rateLimit.requests.push(now);
+  return true;
+}
+
+function sanitizePrompt(prompt) {
+  if (typeof prompt !== 'string') return null;
+  const trimmed = prompt.trim();
+  if (trimmed.length < 3 || trimmed.length > 500) return null;
+  if (/[<>{}]|javascript:|data:/i.test(trimmed)) return null;
+  return trimmed;
+}
+
+function cacheKey(prompt) {
+  return crypto.createHash('sha256').update(prompt.toLowerCase().trim()).digest('hex').slice(0, 16);
+}
+
+async function handleGenerate(req, res) {
+  if (!TRIPO_API_KEY) {
+    return sendJSON(res, 503, { error: 'TRIPO_API_KEY not configured' });
+  }
+  if (!checkRateLimit()) {
+    return sendJSON(res, 429, { error: 'rate limit exceeded', retryAfter: Math.ceil(rateLimit.window / 1000) });
+  }
+
+  const buf = await readBody(req);
+  let body;
+  try { body = JSON.parse(buf.toString('utf8')); } catch { return sendJSON(res, 400, { error: 'invalid JSON' }); }
+
+  const prompt = sanitizePrompt(body.prompt);
+  if (!prompt) return sendJSON(res, 400, { error: 'invalid prompt (3-500 chars, no HTML)' });
+
+  const key = cacheKey(prompt);
+  if (generationCache.has(key)) {
+    const cached = generationCache.get(key);
+    return sendJSON(res, 200, { ok: true, prompt, modelUrl: cached.modelUrl, cached: true, taskId: cached.taskId });
+  }
+
+  try {
+    const createRes = await fetch(`${TRIPO_BASE}/generation/text-to-model`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${TRIPO_API_KEY}` },
+      body: JSON.stringify({ prompt, model: 'v3.1-20260211', texture: true, pbr: true })
+    });
+    const createData = await createRes.json();
+    if (createData.code !== 0 || !createData.data?.task_id) {
+      return sendJSON(res, 502, { error: 'generation failed', detail: createData.message || 'unknown' });
+    }
+
+    const taskId = createData.data.task_id;
+    const maxPolls = 60;
+    const pollInterval = 3000;
+    let modelUrl = null;
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((r) => setTimeout(r, pollInterval));
+      const pollRes = await fetch(`${TRIPO_BASE}/tasks/${taskId}`, {
+        headers: { 'Authorization': `Bearer ${TRIPO_API_KEY}` }
+      });
+      const pollData = await pollRes.json();
+      if (pollData.data?.status === 'success') {
+        modelUrl = pollData.data.output?.model_url;
+        break;
+      }
+      if (pollData.data?.status === 'failed' || pollData.data?.status === 'cancelled') {
+        return sendJSON(res, 502, { error: 'generation failed', detail: pollData.data?.message || 'task failed' });
+      }
+    }
+
+    if (!modelUrl) return sendJSON(res, 504, { error: 'generation timeout' });
+
+    generationCache.set(key, { modelUrl, taskId, prompt, at: Date.now() });
+    sendJSON(res, 200, { ok: true, prompt, modelUrl, cached: false, taskId });
+  } catch (err) {
+    sendJSON(res, 502, { error: 'generation error', detail: err.message });
+  }
 }
 
 /* --------------------------------------------------------------- static -- */

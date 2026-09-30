@@ -749,7 +749,11 @@ export class App {
       'help.shortcuts': { title: 'Keyboard Shortcuts', category: 'Help', keys: '?', run: () => this.showShortcuts() },
       'help.docs': { title: 'About Lumen Studio', category: 'Help', run: () => this.showAbout() },
       'console.clear': { title: 'Clear Console', category: 'Editor', run: () => this.console.clear() },
-      'console.focus': { title: 'Focus Console', category: 'Editor', run: () => document.getElementById('consoleInput')?.focus() }
+      'console.focus': { title: 'Focus Console', category: 'Editor', run: () => document.getElementById('consoleInput')?.focus() },
+
+      // ---- hazoom dimensions
+      'hazoom.generate': { title: 'Generate 3D Model', category: 'Hazoom', run: () => this.hazoomGenerate() },
+      'hazoom.status': { title: 'Hazoom Status', category: 'Hazoom', run: () => this.hazoomStatus() }
     });
 
     c.bindKeys({
@@ -1325,6 +1329,86 @@ export class App {
     if (badge) { badge.textContent = 'ctx restored'; badge.classList.remove('is-bad'); }
     this._applyViewportSize();
     this.requestRender();
+  }
+
+  /* ------------------------------------------------------ hazoom dimensions */
+
+  async hazoomGenerate() {
+    const input = document.getElementById('hazoomPrompt');
+    const status = document.getElementById('hazoomStatus');
+    const prompt = input?.value?.trim();
+    if (!prompt) { this.hazoomSetStatus('Please enter a prompt', 'is-error'); return; }
+
+    const btn = document.querySelector('[data-cmd="hazoom.generate"]');
+    if (btn) btn.disabled = true;
+    this.hazoomSetStatus('Generating… this can take up to 30 seconds', '');
+
+    try {
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'generation failed');
+
+      this.hazoomSetStatus(data.cached ? 'Loaded from cache' : 'Generation complete', 'is-success');
+      this.hazoomShowPreview(data);
+      this.hazoomAddHistory(data);
+      this.hazoomLoadModel(data.modelUrl, prompt);
+    } catch (err) {
+      this.hazoomSetStatus(err.message, 'is-error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async hazoomStatus() {
+    try {
+      const res = await fetch('/api/generate/status');
+      const data = await res.json();
+      this.hazoomSetStatus(`Provider: ${data.provider} · Cached: ${data.cached} · Rate limit: ${data.rateLimit.maxRequests}/${data.rateLimit.windowMs / 1000}s`, '');
+    } catch {
+      this.hazoomSetStatus('Server unavailable', 'is-error');
+    }
+  }
+
+  hazoomSetStatus(text, cls) {
+    const el = document.getElementById('hazoomStatus');
+    if (el) { el.textContent = text; el.className = `hazoom-status ${cls}`; }
+  }
+
+  hazoomShowPreview(data) {
+    const preview = document.getElementById('hazoomPreview');
+    const img = document.getElementById('hazoomPreviewImg');
+    const info = document.getElementById('hazoomPreviewInfo');
+    if (!preview || !img || !info) return;
+    preview.hidden = false;
+    img.textContent = '✨';
+    info.innerHTML = `<strong>${data.prompt}</strong>${data.cached ? 'cached' : 'new'} · task ${data.taskId?.slice(0, 8) || '—'}`;
+  }
+
+  hazoomAddHistory(data) {
+    const history = document.getElementById('hazoomHistory');
+    if (!history) return;
+    const item = document.createElement('div');
+    item.className = 'hazoom-history-item';
+    item.innerHTML = `<span class="hi-prompt">${data.prompt}</span>${data.cached ? '<span class="hi-cached">cached</span>' : ''}`;
+    item.addEventListener('click', () => this.hazoomLoadModel(data.modelUrl, data.prompt));
+    history.prepend(item);
+    while (history.children.length > 10) history.lastChild.remove();
+  }
+
+  async hazoomLoadModel(url, name) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const file = new File([blob], `${name}.glb`, { type: 'model/gltf-binary' });
+      await this.importFiles([file]);
+      this.hazoomSetStatus(`Loaded "${name}" into scene`, 'is-success');
+    } catch (err) {
+      this.hazoomSetStatus(`Failed to load model: ${err.message}`, 'is-error');
+    }
   }
 
   /* -------------------------------------------------------------- chrome */

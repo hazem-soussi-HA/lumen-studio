@@ -606,6 +606,118 @@ input[type="checkbox"]:checked::after {
 }
 .drop-overlay div { font-size: 15px; color: var(--accent); background: rgba(10, 12, 16, 0.8); padding: 12px 20px; border-radius: var(--radius); }
 
+/* ------------------------------------------------------ hazoom dimensions */
+
+.panel-hazoom {
+  grid-area: bottom;
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.panel-hazoom .panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  overflow-y: auto;
+}
+.hazoom-input-group {
+  display: flex;
+  gap: 6px;
+}
+.hazoom-input {
+  flex: 1;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+  font-size: 12px;
+  color: var(--text-0);
+  outline: none;
+}
+.hazoom-input:focus { border-color: var(--accent-dim); }
+.hazoom-input::placeholder { color: var(--text-3); }
+.hazoom-btn {
+  background: var(--accent-dim);
+  color: #fff;
+  border: 0;
+  border-radius: var(--radius);
+  padding: 7px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hazoom-btn:hover { background: var(--accent); }
+.hazoom-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.hazoom-status {
+  font-size: 11px;
+  color: var(--text-2);
+  min-height: 16px;
+}
+.hazoom-status.is-error { color: var(--bad); }
+.hazoom-status.is-success { color: var(--good); }
+.hazoom-preview {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px;
+}
+.hazoom-preview-img {
+  width: 64px;
+  height: 64px;
+  background: var(--bg-2);
+  border-radius: var(--radius);
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  flex-shrink: 0;
+}
+.hazoom-preview-info {
+  flex: 1;
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+}
+.hazoom-preview-info strong {
+  display: block;
+  color: var(--text-0);
+  font-size: 12px;
+  margin-bottom: 2px;
+}
+.hazoom-history {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.hazoom-history-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  background: var(--bg-0);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-size: 11px;
+  cursor: pointer;
+}
+.hazoom-history-item:hover { border-color: var(--accent-dim); }
+.hazoom-history-item .hi-prompt {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hazoom-history-item .hi-cached {
+  color: var(--good);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
 /* ------------------------------------------------------------ responsive */
 
 @media (max-width: 1100px) {
