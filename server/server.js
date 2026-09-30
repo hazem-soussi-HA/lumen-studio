@@ -251,19 +251,22 @@ function cacheKey(prompt) {
 }
 
 async function handleGenerate(req, res) {
+  const buf = await readBody(req);
+  let body;
+  try { body = JSON.parse(buf.toString('utf8')); } catch { return sendJSON(res, 400, { error: 'invalid JSON' }); }
+
+  // Validate before spending anything: rate limit and credentials are checked
+  // only after the payload is known to be well formed, so an unauthenticated
+  // caller cannot use malformed prompts to probe the service.
+  const prompt = sanitizePrompt(body.prompt);
+  if (!prompt) return sendJSON(res, 400, { error: 'invalid prompt (3-500 chars, no HTML)' });
+
   if (!TRIPO_API_KEY) {
     return sendJSON(res, 503, { error: 'TRIPO_API_KEY not configured' });
   }
   if (!checkRateLimit()) {
     return sendJSON(res, 429, { error: 'rate limit exceeded', retryAfter: Math.ceil(rateLimit.window / 1000) });
   }
-
-  const buf = await readBody(req);
-  let body;
-  try { body = JSON.parse(buf.toString('utf8')); } catch { return sendJSON(res, 400, { error: 'invalid JSON' }); }
-
-  const prompt = sanitizePrompt(body.prompt);
-  if (!prompt) return sendJSON(res, 400, { error: 'invalid prompt (3-500 chars, no HTML)' });
 
   const key = cacheKey(prompt);
   if (generationCache.has(key)) {
