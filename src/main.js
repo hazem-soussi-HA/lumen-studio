@@ -97,8 +97,8 @@ async function main() {
   }
 
   progress(0.8, 'building the demo scene…');
-  const noDemo = params.has('empty');
-  await app.start({ demo: !noDemo });
+  const sceneParam = params.get('scene');
+  await app.start({ scene: sceneParam || 'car' });
 
   if (params.has('capabilities')) app.showCapabilities();
   if (params.has('shortcuts')) app.showShortcuts();

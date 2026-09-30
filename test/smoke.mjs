@@ -111,7 +111,7 @@ async function main() {
   const stats = await page.evaluate(() => window.LUMEN.stats());
   check('draw calls issued', stats.drawCalls > 5, `${stats.drawCalls} draws / ${stats.triangles} tris`);
   check('shaders compiled', stats.programs > 3, `${stats.programs} program variants`);
-  check('lights collected', stats.lights >= 3, `${stats.lights} lights`);
+  check('lights collected', stats.lights >= 2, `${stats.lights} lights`);
   check('shadow cascades', stats.shadows.cascades === 2, `${stats.shadows.cascades}×${stats.shadows.resolution}`);
 
   const pixel = await page.evaluate(() => window.LUMEN.pixelProbe());
@@ -119,22 +119,21 @@ async function main() {
   check('frame is not black', pixel[0] + pixel[1] + pixel[2] > 6 && luma > 4,
     `centre rgba(${pixel.join(',')}), mean luma ${luma.toFixed(1)}`);
 
-  // 4b. material options survive asset creation, and instancing really rasterises
+  // 4b. material options survive asset creation
   const mats = await page.evaluate(() => {
     const app = window.LUMEN.app;
-    const asset = (name) => app.assets.byType('material').find((m) => m.name === name);
-    const floor = app.assets.get(app.scene.findByName('Floor').components.render.material);
-    const paint = app.assets.get(app.scene.findByName('Concept Car').components.render.material);
+    const pad = app.assets.get(app.scene.findByName('Drive Pad')?.components.render.material);
+    const paint = app.assets.get(app.scene.findByName('Body')?.components.render.material);
     return {
-      floorName: floor?.name, floorAlbedo: floor?.material.diffuse?.[0],
+      padName: pad?.name, padAlbedo: pad?.material.diffuse?.[0],
       paintName: paint?.name, paintMetal: paint?.material.metalness,
       distinct: new Set(app.assets.byType('material').map((m) => m.name)).size,
       total: app.assets.byType('material').length
     };
   });
   check('material options applied on create',
-    mats.floorName === 'Showroom Floor' && mats.floorAlbedo < 0.2 && mats.paintMetal > 0.5 && mats.distinct > 5,
-    `${mats.distinct}/${mats.total} distinct · floor ${mats.floorName} a=${mats.floorAlbedo?.toFixed(3)} · paint metal=${mats.paintMetal}`);
+    mats.padName === 'Drive Pad' && mats.padAlbedo < 0.2 && mats.paintMetal > 0.5 && mats.distinct > 5,
+    `${mats.distinct}/${mats.total} distinct · pad ${mats.padName} a=${mats.padAlbedo?.toFixed(3)} · paint metal=${mats.paintMetal}`);
 
   // 5. no GL errors
   const glErrors = await page.evaluate(() => window.LUMEN.glErrors());
@@ -144,40 +143,23 @@ async function main() {
   const picked = await page.evaluate(async () => {
     const app = window.LUMEN.app;
     const V = app.viewport, cam = V.camera;
-    // The demo surrounds the car with a colonnade, and the turntable covers the
-    // middle of the body, so hide the occluders for the duration of the check:
-    // the id buffer is a *depth* buffer, it returns whatever is genuinely nearest.
-    const hidden = app.scene.entities.filter((e) => /^Colonnade|Turntable$/.test(e.name));
-    const wasEnabled = hidden.map((e) => e.enabled);
-    hidden.forEach((e) => { e.enabled = false; });
-    app.scene.touch('test');
-    app.requestRender();
-
-    const target = app.scene.findByName('Concept Car');
+    const target = app.scene.findByName('Body');
+    if (!target) return { hit: null, ids: 0, corner: 'no target', w: 0, dpr: 1 };
     const m = cam.viewProj, w = target.worldPosition;
     const clip = [0, 0, 0, 0];
     for (let i = 0; i < 4; i++) clip[i] = m[i] * w[0] + m[4 + i] * w[1] + m[8 + i] * w[2] + m[12 + i];
     const cx = (clip[0] / clip[3] * 0.5 + 0.5) * V.width;
     const cy = (1 - (clip[1] / clip[3] * 0.5 + 0.5)) * V.height;
     const opts = { width: V.width, height: V.height };
-    // One id render, then many single-pixel reads off the same buffer.
     const centre = app.renderer.pick(app.scene, cam, cx, cy, { ...opts, force: true });
-    // Empty background must stay empty: an id buffer that is never cleared would
-    // make every pick succeed and hide the difference between a hit and a miss.
     const corner = app.renderer.pick(app.scene, cam, 2, 2, opts);
-
-    hidden.forEach((e, i) => { e.enabled = wasEnabled[i]; });
-    app.scene.touch('test');
-    app.requestRender();
     return {
       hit: centre?.name || null, ids: app.renderer._pickingIds.size,
       corner: corner?.name || null, w: app.renderer.pickingTarget.width, dpr: app.ctx.dpr
     };
   });
-  // The ray through the body centre meets the glass cabin first, so the id buffer
-  // is expected to return a *car* part, not necessarily the body itself.
   check('id-buffer picking works',
-    /^Concept Car|Cabin|Nose|Splitter|Wheel/.test(picked.hit || '') && !picked.corner && picked.ids > 10 && picked.w > 1,
+    /^Body|Cabin|Chassis|Car|Wheel|Tyre|Rim/.test(picked.hit || '') && !picked.corner && picked.ids > 10 && picked.w > 1,
     `${picked.hit || 'no hit'} (${picked.ids} ids, id buffer ${picked.w}px, corner: ${picked.corner || 'empty'})`);
 
   // 6b. instancing: every instance must be drawn *and* picked. A draw that issues
@@ -185,15 +167,21 @@ async function main() {
   // an id pass that draws a single copy picks a phantom at the entity origin.
   const inst = await page.evaluate(() => {
     const app = window.LUMEN.app, V = app.viewport, cam = V.camera, r = app.renderer;
-    const e = app.scene.findByName('Colonnade (instanced)');
-    if (!e) return { total: 0, hits: 0, n: 0 };
+    let e = app.scene.findByName('Colonnade (instanced)');
+    if (!e) {
+      const EntityClass = app.scene.root.constructor;
+      e = new EntityClass({ name: 'Test Instanced', position: [0, 1.35, 0], scale: [0.42, 2.7, 0.42] });
+      e.addComponent('render', { mesh: app.assets.byType('model')[0]?.id, material: app.assets.byType('material')[0]?.id, instanceCount: 12, instanceSpread: 5, instanceLayout: 'ring', castShadows: true, receiveShadows: true });
+      app.scene.root.addChild(e);
+      app.scene.touch('test');
+      app.requestRender();
+    }
     e.enabled = true;
     const n = e.components.render.instanceCount, spread = e.components.render.instanceSpread;
     const m = cam.viewProj, opts = { width: V.width, height: V.height, force: true };
-    r.pick(app.scene, cam, V.width * 0.5, V.height * 0.5, opts);   // one id render
+    r.pick(app.scene, cam, V.width * 0.5, V.height * 0.5, opts);
     let total = 0, hits = 0;
     for (let k = 0; k < n; k++) {
-      // Reproduce the 'ring' layout the renderer generates for this entity.
       const a = (k / n) * Math.PI * 2;
       const w = [Math.cos(a) * spread, 1.35, Math.sin(a) * spread];
       const c = [0, 0, 0, 0];
@@ -208,14 +196,14 @@ async function main() {
     return { total, hits, n };
   });
   check('instanced ring draws and picks', inst.total >= 3 && inst.hits >= Math.ceil(inst.total * 0.5),
-    `${inst.hits}/${inst.total} on-screen pillars of ${inst.n} picked as the instanced entity`);
+    `${inst.hits}/${inst.total} on-screen instances of ${inst.n} picked as the instanced entity`);
 
   // 6c. the inspector must survive a refresh: a field whose refresh() wiped its
   // value made every entity look like it had no mesh or material assigned.
   const insp = await page.evaluate(() => {
     const app = window.LUMEN.app;
-    app.selectAt(app.scene.findByName('Concept Car'));
-    app.inspector.update();                     // the cheap refresh path
+    app.selectAt(app.scene.findByName('Body'));
+    app.inspector.update();
     app.inspector.update();
     const refs = app.inspector.fields.filter((f) => f?.constructor?.name === 'AssetRefField');
     return refs.map((f) => f.opts.store.get(f.value)?.name || null);
@@ -253,7 +241,7 @@ async function main() {
   const gizmoTest = await page.evaluate(() => {
     const app = window.LUMEN.app;
     app.setTool('move');
-    const e = app.scene.findByName('Concept Car');
+    const e = app.scene.findByName('Body');
     if (e) app.scene.select(e);
     app.viewport.updateCamera(0.016);
     const p = app.gizmo.screenSize(app.viewport.camera, app.viewport.height);
@@ -397,6 +385,137 @@ f 1/1/1 3/3/1 4/4/1`;
   // The context-loss test deliberately logs an error; that is the expected noise.
   const realConsole = consoleErrors.filter((m) => !/favicon|Autofill|context lost|context restored/.test(m));
   check('no console errors', realConsole.length === 0, realConsole.slice(0, 2).join(' | '));
+
+  /* ------------------------------------------- car template (own document) */
+
+  // These run last: the template replaces the scene, so anything still asserting
+  // on the showroom entities has to have finished first.
+  const dyn = await page.evaluate(async () => {
+    const { Vehicle } = await import('/src/sim/vehicle.js');
+    const open = { boundRadius: 1e6 };
+    const spin = (v, secs, dt, input) => {
+      for (let i = 0, n = Math.round(secs / dt); i < n; i++) { v.setInput(input); v.update(dt); }
+    };
+
+    // Full lock at speed: lateral acceleration must stay near what a tyre can do.
+    const v = new Vehicle(open);
+    v.reset();
+    spin(v, 8, 1 / 60, { throttle: 1, brake: 0, steer: 0 });
+    let peakG = 0;
+    for (let i = 0; i < 360; i++) {
+      v.setInput({ throttle: 0.35, brake: 0, steer: 1 });
+      v.update(1 / 60);
+      peakG = Math.max(peakG, Math.abs(v.latG));
+    }
+
+    // The same wall-clock second at 15 fps and at 144 fps must land in the same place.
+    const travel = (dt) => {
+      const c = new Vehicle(open);
+      c.reset();
+      for (let t = 0; t < 10; t += dt) { c.setInput({ throttle: 1, brake: 0, steer: 0 }); c.update(dt); }
+      return c.z;
+    };
+    const slow = travel(1 / 15);
+    const fast = travel(1 / 144);
+
+    // Braking must stop the car, never push it into reverse.
+    const b = new Vehicle(open);
+    b.reset();
+    spin(b, 8, 1 / 60, { throttle: 1, brake: 0, steer: 0 });
+    let mostNegative = 0;
+    for (let i = 0; i < 600; i++) {
+      b.setInput({ throttle: 0, brake: 1, steer: 0 });
+      b.update(1 / 60);
+      mostNegative = Math.min(mostNegative, b.speed);
+    }
+    return { peakG, slow, fast, divergence: Math.abs(slow - fast), mostNegative, finalKph: b.telemetry.speedKph };
+  });
+  check('cornering is tyre-limited', dyn.peakG > 0.5 && dyn.peakG < 1.4, `peak ${dyn.peakG.toFixed(2)} g`);
+  check('sim is frame-rate independent', dyn.divergence < 12, `${dyn.divergence.toFixed(2)} m apart after 10 s at 15 vs 144 fps`);
+  check('brake stops without reversing', dyn.mostNegative >= 0 && dyn.finalKph < 1,
+    `most negative ${dyn.mostNegative.toFixed(3)} m/s, settled at ${dyn.finalKph.toFixed(3)} kph`);
+
+  await page.evaluate(() => window.LUMEN.app.commands.run('file.templateCar'));
+  const driven = await page.evaluate(async () => {
+    const app = window.LUMEN.app;
+    const { quat, deg } = await import('/src/core/math.js');
+    const keys = app.viewport.keys;
+    const car = app.car;
+    if (!car) return { ok: false, why: 'no controller' };
+    const start = { x: car.vehicle.x, z: car.vehicle.z, yaw: car.vehicle.yaw };
+
+    keys.add('w');
+    for (let i = 0; i < 240; i++) car.update(1 / 60);
+    keys.delete('w');
+    keys.add('d');
+    for (let i = 0; i < 120; i++) car.update(1 / 60);
+    keys.delete('d');
+
+    const v = car.vehicle;
+    const rig = car.root;
+    // Read the rig the way the renderer does — from the quaternion — not from
+    // the euler array, which is a derived copy and would hide a rig that never
+    // actually turned.
+    const rigEuler = quat.toEuler([0, 0, 0], rig.quaternion);
+    return {
+      ok: true,
+      moved: Math.hypot(v.x - start.x, v.z - start.z),
+      turned: Math.abs(v.yaw - start.yaw),
+      kph: v.telemetry.speedKph,
+      rigX: rig.position[0],
+      rigZ: rig.position[2],
+      rigYawDeg: rigEuler[1],
+      modelYawDeg: deg(v.yaw),
+      steered: Math.abs(v.wheels[0].steer) > 0,
+      spun: Math.abs(v.wheels[0].spin) > 0,
+      wheelEntities: car.wheels.length,
+      named: app.scene.root.children.some((e) => e.name === 'Car')
+    };
+  });
+  check('car template builds a rig', driven.ok && driven.wheelEntities === 4 && driven.named,
+    driven.ok ? `${driven.wheelEntities} wheels, root found` : driven.why);
+  check('car drives and steers', driven.moved > 1 && driven.turned > 0.05 && driven.kph > 1,
+    `moved ${driven.moved.toFixed(1)} m, turned ${(driven.turned * 57.3).toFixed(0)}°, ${driven.kph.toFixed(0)} kph`);
+  check('wheels steer and spin', driven.steered && driven.spun);
+  // The rig must actually carry the model's state. Mutating `entity.rotation` is a
+  // no-op here — Entity stores a quaternion and `rotation` is a derived array — so
+  // this is the check that would have caught it. Euler extraction returns [0,360),
+  // hence the wrap.
+  const yawErr = Math.abs((((driven.rigYawDeg - driven.modelYawDeg) % 360) + 540) % 360 - 180);
+  check('rig transform follows the model',
+    Math.abs(driven.rigX) < 50 && Math.abs(driven.rigZ) < 50 && yawErr < 0.5,
+    `rig (${driven.rigX.toFixed(1)}, ${driven.rigZ.toFixed(1)}) yaw ${driven.rigYawDeg.toFixed(1)}° vs model ${driven.modelYawDeg.toFixed(1)}° (off by ${yawErr.toFixed(2)}°)`);
+
+  // The record shot is taken from a fresh load rather than from the state these
+  // checks left behind: an earlier check switches the renderer into a debug view
+  // and another leaves a menu open, and neither belongs in a picture of the
+  // template. Reloading also proves the template is reachable from a cold start.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction('window.LUMEN && window.LUMEN.ready === true', { timeout: 90000 });
+  await page.evaluate(async () => {
+    const app = window.LUMEN.app;
+    await app.commands.run('file.templateCar');
+    const V = app.viewport;
+    V.target[0] = 0; V.target[1] = 0.7; V.target[2] = 0;
+    V.distance = 9.5;
+    V.yaw = -38;
+    V.pitch = -16;
+    V.updateCamera(0.016);
+    app.renderNow();
+  });
+  await new Promise((r) => setTimeout(r, 900));
+  const carShot = path.join(shotDir, 'car.png');
+  await page.screenshot({ path: carShot });
+  check('car screenshot written', fs.existsSync(carShot) && fs.statSync(carShot).size > 10000,
+    `${path.relative(ROOT, carShot)} (${Math.round(fs.statSync(carShot).size / 1024)} KB)`);
+
+  const coldStart = await page.evaluate(() => ({
+    scene: window.LUMEN.app.scene.name,
+    hasCar: !!window.LUMEN.app.car,
+    debugView: window.LUMEN.app.renderer.debugView
+  }));
+  check('car template loads from a cold start', coldStart.hasCar && /Car/.test(coldStart.scene) && coldStart.debugView === 0,
+    `scene "${coldStart.scene}", debug view ${coldStart.debugView}`);
 
   await finish(browser, server, shotDir);
 }

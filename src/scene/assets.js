@@ -63,11 +63,6 @@ export class AssetStore extends Emitter {
   folderNames() { return [...this.folders.values()].map((f) => f.name); }
 
   folderTree() {
-    const roots = [];
-    for (const f of this.folders.values()) {
-      const node = { ...f, children: [], assetCount: 0 };
-      if (f.parent === 'root') roots.push(node);
-    }
     const map = new Map();
     for (const f of this.folders.values()) map.set(f.id, { ...f, children: [], assetCount: 0 });
     for (const node of map.values()) {
@@ -77,10 +72,13 @@ export class AssetStore extends Emitter {
       const f = map.get(a.folder);
       if (f) f.assetCount++;
     }
+    const roots = [];
+    for (const f of this.folders.values()) {
+      if (f.parent === 'root') roots.push(map.get(f.id));
+    }
     const build = (node) => {
-      const full = map.get(node.id);
-      full.children = node.children.map(build).filter((c) => c.children.length || c.assetCount);
-      return full;
+      node.children = node.children.map(build).filter((c) => c.children.length || c.assetCount);
+      return node;
     };
     return roots.map(build);
   }
@@ -321,7 +319,7 @@ export class AssetStore extends Emitter {
       }
       case 'model': {
         if (json.geometry) {
-          return this.createModel(json.name, decodeGeometry(json.geometry), { primitive: json.primitive });
+          return this.createModel(json.name, decodeGeometry(json.geometry, this.ctx), { primitive: json.primitive });
         }
         return this.add({ ...json, gpu: null });
       }
@@ -548,15 +546,14 @@ function decode(str, Ctor) {
   return new Ctor(bytes.buffer);
 }
 
-function decodeGeometry(g) {
+function decodeGeometry(g, ctx) {
   const geometry = {};
   if (g.positions) geometry.positions = decode(g.positions, Float32Array);
   if (g.normals) geometry.normals = decode(g.normals, Float32Array);
   if (g.uvs) geometry.uvs = decode(g.uvs, Float32Array);
   if (g.indices) {
     const i32 = decode(g.indices, Uint32Array);
-    // Keep 32-bit indices when the platform supports them, else downcast.
-    geometry.indices = this.ctx?.caps?.limits?.indexUint ? i32 : new Uint32Array(i32);
+    geometry.indices = ctx?.caps?.limits?.indexUint ? i32 : new Uint16Array(i32);
   }
   if (!geometry.positions) throw new Error('serialised geometry has no positions');
   return geometry;

@@ -22,6 +22,7 @@ import * as util from '../core/utils.js';
 
 const { formatBytes, uid } = util;
 import { clamp, vec3, aabb } from '../core/math.js';
+import { buildCarScene } from '../scenes/car.js';
 import { Gizmo, GIZMO_MODE } from './gizmo.js';
 import { Viewport } from './viewport.js';
 import { HierarchyPanel } from './hierarchy.js';
@@ -92,6 +93,10 @@ export class App {
     this._transformSnapshot = null;
     this.projectId = null;
     this.serverOnline = false;
+    /** Set by a scene builder that simulates; called once per frame with dt. */
+    this.sceneTick = null;
+    /** Car-template controller, when that template is the open document. */
+    this.car = null;
 
     this._wireScene();
     this._registerCommands();
@@ -102,7 +107,7 @@ export class App {
 
   /* ------------------------------------------------------------ bootstrap */
 
-  async start({ demo = true } = {}) {
+  async start({ scene = 'car' } = {}) {
     this.log.info(`Lumen Studio — ${this.ctx.caps.isWebGL2 ? 'WebGL 2.0 / GLSL ES 3.00' : 'WebGL 1.0 / GLSL ES 1.00'}`);
     this.log.info(`adapter: ${this.ctx.caps.renderer}`);
     this.log.info(`tier: ${this.ctx.caps.tier.name} (score ${this.ctx.caps.tier.score})`);
@@ -110,8 +115,13 @@ export class App {
     this.applySceneSettings();
 
     this.seedAssets();
-    if (demo) buildDemoScene(this);
-    else this.scene = Scene.fromJSON(storage.get(AUTOSAVE_KEY) || this.scene.toJSON());
+    if (scene === 'car') {
+      this.sceneTick = buildCarScene(this).update;
+    } else if (scene === 'demo') {
+      buildDemoScene(this);
+    } else {
+      this.scene = Scene.fromJSON(storage.get(AUTOSAVE_KEY) || this.scene.toJSON());
+    }
     // The scene may have replaced the environment wholesale (sky, exposure, fog) —
     // push it into the renderer before the first frame, or the IBL is built from
     // the defaults and the picture does not match the document.
@@ -341,6 +351,9 @@ export class App {
 
     this.viewport.fps(dt);
     this.stats.sample(dt * 1000);
+    // A scene that simulates (the car template) ticks here rather than on render,
+    // so it keeps its own clock even while the event-driven renderer is idle.
+    this.sceneTick?.(dt);
     this.viewport.stepFocusTween(dt);
     // Always sync: the orbit state (target/distance/yaw/pitch) is authoritative and
     // the matrices have to follow it even when no key is held.
@@ -655,6 +668,18 @@ export class App {
       'file.save': { title: 'Save Project', category: 'File', keys: 'Ctrl+S', run: () => this.saveProject() },
       'file.export': { title: 'Export…', category: 'File', run: (app, anchor) => this.showExportMenu(anchor) },
       'file.import': { title: 'Import Models / Textures…', category: 'File', run: () => this.importFiles() },
+      'file.templateCar': {
+        title: 'New Scene from Car Template',
+        category: 'File',
+        run: () => this.loadCarTemplate()
+      },
+      'drive.reset': {
+        title: 'Reset Car',
+        category: 'Drive',
+        // Shift, not R: plain R is the gizmo's rotate.
+        keys: 'Shift+R',
+        run: () => { this.car?.reset(); }
+      },
 
       // ---- edit
       'edit.undo': { title: 'Undo', category: 'Edit', keys: 'Ctrl+Z', run: () => { this.history.undo(); this.log.info('undo'); } },
@@ -752,6 +777,7 @@ export class App {
       'w': '__tool:move',
       'e': '__tool:rotate',
       'r': '__tool:scale',
+      'shift+r': 'drive.reset',
       '1': '__view:front',
       '2': '__view:right',
       '3': '__view:top',
@@ -1030,10 +1056,23 @@ export class App {
   newScene() {
     if (this.scene.dirty) this.autosave();
     this.scene = new Scene('Untitled');
+    this.sceneTick = null;
     this._rebindScene();
     this.history.reset();
     this.refreshAll();
     this.setStatus('new scene');
+  }
+
+  /**
+   * Swap the document for the driveable car template. The scene tick is cleared
+   * first: a controller bound to the previous document would keep writing
+   * transforms into entities that are no longer in the graph.
+   */
+  loadCarTemplate() {
+    this.newScene();
+    this.sceneTick = buildCarScene(this).update;
+    this.refreshAll();
+    this.setStatus('car template');
   }
 
   _rebindScene() {

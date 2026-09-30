@@ -101,7 +101,25 @@ export class Entity {
 
   setPosition(x, y, z) { this._pos[0] = x; this._pos[1] = y; this._pos[2] = z; this._touchLocal(); return this; }
   translateLocal(x, y, z) { vec3.add(this._pos, this._pos, [x, y, z]); this._touchLocal(); return this; }
-  translateWorld(x, y, z) { vec3.add(this._pos, this._pos, [x, y, z]); this._touchLocal(); return this; }
+  translateWorld(x, y, z) {
+    if (this.parent) {
+      const inv = mat4.invert(mat4.create(), this.parent.worldMatrix);
+      if (inv) {
+        const offset = vec3.fromValues(
+          inv[0] * x + inv[4] * y + inv[8] * z,
+          inv[1] * x + inv[5] * y + inv[9] * z,
+          inv[2] * x + inv[6] * y + inv[10] * z
+        );
+        vec3.add(this._pos, this._pos, offset);
+      } else {
+        vec3.add(this._pos, this._pos, [x, y, z]);
+      }
+    } else {
+      vec3.add(this._pos, this._pos, [x, y, z]);
+    }
+    this._touchLocal();
+    return this;
+  }
 
   get worldPosition() {
     const m = this.worldMatrix;
@@ -124,9 +142,11 @@ export class Entity {
   lookAt(target, up = [0, 1, 0]) {
     const from = this.worldPosition;
     const m = mat4.lookAt(mat4.create(), from, target, up);
-    mat4.getTranslation(_v3a, m);
+    if (this.parent) {
+      const inv = mat4.invert(mat4.create(), this.parent.worldMatrix);
+      if (inv) mat4.multiply(m, inv, m);
+    }
     quat.fromMat4Basis(this._rot, m);
-    this._pos[0] = _v3a[0]; this._pos[1] = _v3a[1]; this._pos[2] = _v3a[2];
     this._touchLocal();
     return this;
   }
